@@ -1,4 +1,4 @@
-* BUSINESS OBJECT SYSTEM (boss) COMMON LISP IMPLEMENTATION
+* BUSINESS OBJECT SYSTEM COMMON LISP IMPLEMENTATION
 ** Pointers
    - See <https://github.com/Biomine3000/protocol-specification> for protocol
      specification
