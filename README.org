@@ -6,9 +6,7 @@
   protocol specification.
 ** Required libraries
    You can run the following code in your REPL (Quicklisp required) to be able
-   to load protocol.lisp.
+   to load object-system.lisp.
    #+BEGIN_EXAMPLE
-(ql:quickload '("usocket" "cl-json" "bordeaux-threads"
-                "flexi-streams" "cl-ppcre" "mcclim" "ironclad"
-                "babel" "mcclim"))
+(ql:quickload '("cl-json" "flexi-streams" "cl-ppcre" "ironclad" "babel"))
    #+END_EXAMPLE
