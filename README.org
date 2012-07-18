@@ -1,5 +1,14 @@
-* BUSINESS OBJECT SYSTEM COMMON LISP IMPLEMENTATION
-** Pointers
-   - See <https://github.com/Biomine3000/protocol-specification> for protocol
-     specification
+* Object System implementation in Common Lisp
+  This is the data and protocol implementation of the object system.
+  Actual implementations lie in *biomine-tv-lisp*.
 
+  See https://github.com/Biomine3000/protocol-specification/ for the
+  protocol specification.
+** Required libraries
+   You can run the following code in your REPL (Quicklisp required) to be able
+   to load protocol.lisp.
+   #+BEGIN_EXAMPLE
+   (ql:quickload '("usocket" "cl-json" "bordeaux-threads"
+                   "flexi-streams" "cl-ppcre" "mcclim" "ironclad"
+                   "babel" "mcclim"))
+   #+END_EXAMPLE

@@ -8,5 +8,5 @@
 		 #:babel
 		 #:lift
 		 #:trivial-gray-streams)
-    :components ((:file "protocol")
+    :components ((:file "object-system")
 		 (:file "tests")))
