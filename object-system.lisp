@@ -23,6 +23,9 @@
 	   :textual-p
 	   :type-definition-as-string
 	   :object-type
+	   :metadata
+
+	   :serialize-alist-metadata
 
 	   :business-object
 	   :type-definition))
@@ -38,15 +41,25 @@
 (defclass type-definition ()
   ((content-type :initarg :content-type :accessor content-type)
    (content-subtype :initarg :content-subtype :accessor content-subtype)
-   (charset :initarg :charset :accessor charset)))
+   (metadata :initarg :metadata :accessor metadata :initform nil)))
 
 (defmethod print-object ((object type-definition) stream)
   (print-unreadable-object (object stream :type t)
     (serialize object stream)))
 
+(defun serialize-alist-metadata (stream metadata)
+  "((:foo . \"bar\") (:baz 123)) => foo=\"bar\"; baz=123"
+  (format stream "~{~a~^; ~}"
+	  (mapcar #'(lambda (pair)
+		      (format nil "~(~A~)=~S" (car pair) (cdr pair)))
+		  metadata)))
+
 (defmethod serialize ((object type-definition) stream)
   (with-slots (content-type content-subtype charset) object
-    (format stream "~a/~a; charset=~a" content-type content-subtype charset)))
+    (format stream "~a/~a" content-type content-subtype)
+    (when (metadata object)
+      (format stream "; ")
+      (serialize-alist-metadata stream object))))
 
 (defun textual-p (type-definition)
   (if (string-equal "text" (content-type type-definition)) t nil))
@@ -58,6 +71,8 @@
     (get-output-stream-string serializing-stream)))
 
 (defun read-type-definition-from-string (string)
+  (when (eq string nil)
+    (return-from read-type-definition-from-string nil))
   (cl-ppcre:register-groups-bind
    (content-type content-subtype delimiter charset)
    ("(\\w+)/(\\w+)(;\\s+charset=)?([\\w-\\d]+)?" string)
@@ -66,40 +81,45 @@
 	(make-instance 'type-definition
 		       :content-type content-type
 		       :content-subtype content-subtype
-		       :charset charset)
+		       :metadata (acons :charset charset nil))
 	(make-instance 'type-definition
 		       :content-type content-type
-		       :content-subtype content-subtype
-		       :charset "UTF-8"))))
+		       :content-subtype content-subtype))))
 
 ;; Business objects
 (defclass business-object ()
-  ((object-type :initarg :object-type :accessor object-type)
-   (id :initarg :id :accessor id)
-   (properties :initarg :properties :accessor properties)
-   (payload :initarg :payload :accessor payload)
-   (payload-size :initarg :payload-size :accessor payload-size)))
+  ((object-type :initarg :object-type :accessor object-type :initform nil)
+   (id :initarg :id :accessor id :initform (make-message-id))
+   (metadata :initarg :metadata :accessor metadata :initform nil)
+   (payload :initarg :payload :accessor payload :initform nil)
+   (payload-size :initarg :payload-size :accessor payload-size :initform 0)))
 
 (defmethod print-object ((object business-object) stream)
   (print-unreadable-object (object stream :type t)
-    (with-slots (object-type) object
-      (if (textual-p object-type)
-	  (progn
-	    (serialize object-type stream)
-	    (format stream " ~s" (babel:octets-to-string (payload object))))
-	  (serialize object-type stream)))))
+    (with-slots (object-type metadata) object
+      (serialize-alist-metadata stream (metadata object))
+      (if object-type
+	(if (textual-p object-type)
+	    (progn
+	      (serialize object-type stream)
+	      (format stream " ~s" (babel:octets-to-string (payload object))))
+	    (serialize object-type stream))))))
+
 
 (defmethod serialize ((object business-object) stream)
-  (with-slots (properties object-type payload payload-size id) object
+  (with-slots (metadata object-type payload payload-size id) object
     (let
 	((character-stream (make-flexi-stream stream
 			    :element-type 'character
-			    :external-format '(:utf-8 :eol-style :lf))))
-      (json:encode-json-alist 
-       (acons :type (type-definition-as-string object-type)
-	      (acons :size payload-size
-		     (acons :id id
-			    properties))) character-stream)
+			    :external-format '(:utf-8 :eol-style :lf)))
+	 (metadata (acons :id id
+			  metadata)))
+      (when payload
+	(push (cons :size payload-size) metadata))
+      (when object-type
+	(push (cons :type (type-definition-as-string object-type)) metadata))
+
+      (json:encode-json-alist metadata character-stream)
       (format character-stream "~C" #\Nul)
       (force-output character-stream))
 
@@ -115,7 +135,7 @@ defined count of bytes, the payload."
 					    :element-type 'character
 					    :external-format '(:utf-8 :eol-style :lf)))
        (last-char nil)
-       (properties nil)
+       (metadata nil)
        (payload nil))
     (loop
        until (equal #\Nul last-char) do
@@ -125,7 +145,7 @@ defined count of bytes, the payload."
     (decf (fill-pointer buffer)) ; we don't need the nul for anything
 
     (handler-case
-	(setf properties (json:decode-json-from-string buffer))
+	(setf metadata (json:decode-json-from-string buffer))
       (json:json-syntax-error (jse)
 	(format *error-output* "Raw input as string: ~s~%" buffer)
 	(format *error-output* "Raw input as octets: ~a~%"
@@ -135,7 +155,7 @@ defined count of bytes, the payload."
     (handler-case
 	(progn
 	  (let
-	      ((size (cdr (assoc :size properties))))
+	      ((size (cdr (assoc :size metadata))))
 	    (unless (or (not size) (= size 0))
 	      (progn
 		(setf payload (make-array size :element-type 'octet))
@@ -143,15 +163,15 @@ defined count of bytes, the payload."
 
 	  (make-instance 'business-object
 			 :object-type (read-type-definition-from-string
-				       (cdr (assoc :type properties)))
-			 :id (cdr (assoc :id properties))
-			 :properties (remove-if #'(lambda (pair)
+				       (cdr (assoc :type metadata)))
+			 :id (cdr (assoc :id metadata))
+			 :metadata (remove-if #'(lambda (pair)
 						    (if (or (eq (car pair) :type)
 							    (eq (car pair) :size)
 							    (eq (car pair) :id))
-							t)) properties)
+							t)) metadata)
 			 :payload payload
-			 :payload-size (cdr (assoc :size properties))))
+			 :payload-size (cdr (assoc :size metadata))))
       (type-error (te)
 	(format *error-output* "Raw input as string: ~s~%" buffer)
 	(format *error-output* "Raw input as octets: ~a~%"
@@ -184,7 +204,5 @@ defined count of bytes, the payload."
        (size (length payload)))
     (make-instance 'business-object
 		   :payload payload
-		   :properties '()
 		   :object-type (read-type-definition-from-string "text/plain")
-		   :payload-size size
-		   :id (make-message-id))))
+		   :payload-size size)))
