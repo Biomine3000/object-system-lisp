@@ -9,4 +9,5 @@
 		 #:lift
 		 #:trivial-gray-streams)
     :components ((:file "object-system")
+		 (:file "protocol")
 		 (:file "tests")))

@@ -22,13 +22,18 @@
 	   :id
 	   :textual-p
 	   :type-definition-as-string
+	   :read-type-definition-from-string
 	   :object-type
 	   :metadata
+	   :get-field
 
 	   :serialize-alist-metadata
 
 	   :business-object
-	   :type-definition))
+	   :type-definition
+
+	   :make-subscribe-object
+	   :wait-for-reply-to))
 
 (in-package :object-system)
 
@@ -75,7 +80,7 @@
     (return-from read-type-definition-from-string nil))
   (cl-ppcre:register-groups-bind
    (content-type content-subtype delimiter charset)
-   ("(\\w+)/(\\w+)(;\\s+charset=)?([\\w-\\d]+)?" string)
+   ("(\\w+)/([-\\w]+)(;\\s+charset=)?([\\w-\\d]+)?" string)
     (declare (ignore delimiter))
     (if charset
 	(make-instance 'type-definition
@@ -98,7 +103,7 @@
   (print-unreadable-object (object stream :type t)
     (with-slots (object-type metadata) object
       (serialize-alist-metadata stream (metadata object))
-      (if object-type
+      (when object-type
 	(if (textual-p object-type)
 	    (progn
 	      (serialize object-type stream)
@@ -112,19 +117,25 @@
 	((character-stream (make-flexi-stream stream
 			    :element-type 'character
 			    :external-format '(:utf-8 :eol-style :lf)))
-	 (metadata (acons :id id
-			  metadata)))
-      (when payload
-	(push (cons :size payload-size) metadata))
-      (when object-type
-	(push (cons :type (type-definition-as-string object-type)) metadata))
+	 (metadata (acons :id id metadata)))
 
+      (when payload
+	(setf metadata (acons :size payload-size metadata)))
+
+      (when object-type
+	(setf metadata (acons :type (type-definition-as-string object-type) metadata)))
+
+      ;; (let
+      ;; 	  ((json:*lisp-identifier-name-to-json*
+      ;; 	   #'(lambda (identifier) (string-downcase (string identifier)))))
+      ;; 	(json:encode-json-alist metadata character-stream))
       (json:encode-json-alist metadata character-stream)
       (format character-stream "~C" #\Nul)
       (force-output character-stream))
 
-    (if payload-size
-	(write-sequence payload stream))))
+    (when (and payload-size (> payload-size 0))
+      (write-sequence payload stream :end payload-size)
+      (force-output stream))))
 
 (defun read-object (stream)
   "Read an object from stream. First consume until nul, after that read metadata
@@ -178,7 +189,8 @@ defined count of bytes, the payload."
 		(babel:string-to-octets buffer  :external-format :utf8))
 	(error te)))))
 
-
+(defun get-field (obj key &optional default)
+  (cdr (assoc key (metadata obj) :test #'string-equal)))
 
 ;; Message identification generation
 (defun make-message-id ()
