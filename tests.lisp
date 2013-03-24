@@ -13,7 +13,7 @@
 ;;;; OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 (defpackage #:object-system-tests
   (:use #:common-lisp #:object-system #:lift #:flexi-streams)
-  (:export #:run-suites))
+  (:export #:run))
 
 (in-package :object-system-tests)
 
@@ -24,7 +24,7 @@
 (addtest (object-serialization)
   serialize
   (ensure-same
-   (let*
+   (let
        ((output-stream (make-in-memory-output-stream)))
      (serialize original-object output-stream)
      (let*
@@ -34,9 +34,12 @@
        (payload read-object)))
    (payload original-object)))
 
-(defun run-suites ()
-  (dolist (suite (list
-		  'object-serialization))
-    (lift:run-tests :suite suite
-		    :break-on-errors? t
-		    :break-on-failures? t)))
+
+(defun run ()
+  (let ((suites (list 'object-serialization)))
+    (dolist (suite suites)
+      (dolist (test (testsuite-tests suite))
+	(handler-case
+	    (format t "~A~%" (run-test :name test :suite suite))
+	  (error (e)
+	    (format *error-output* "Encountered error ~s~%" e)))))))
